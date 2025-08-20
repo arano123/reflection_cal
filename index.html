@@ -121,15 +121,15 @@
     /* ===== 手機響應式 ===== */
     @media (max-width: 1400px) {
       .wrap {
-        grid-template-columns: 1fr; /* 單欄，左側控制欄在上方 */
+        grid-template-columns: 1fr; /* 只有一欄 */
+        grid-template-rows: auto auto; /* 上下兩個區塊 */
       }
       .panel {
-        width: 100%; /* 左側控制欄撐滿 */
-        margin-bottom: 16px;
+        width: 100%; /* 左側控制區拉滿寬度 */
       }
       canvas {
-        width: 100%; /* Canvas 自動填滿螢幕寬度 */
-        height: auto; /* 保持比例 */
+        width: 100%;
+        height: auto; /* 高度自適應 */
       }
     }
   </style>
@@ -458,6 +458,18 @@
   }
 
   drawBtn.addEventListener('click', drawMultiplePaths);
+
+  function resizeCanvas() {
+    const container = document.getElementById('canvasContainer');
+    const canvas = document.getElementById('myCanvas');
+    canvas.width = container.clientWidth;
+    canvas.height = container.clientHeight;
+    drawImage(); // 重新繪製內容
+  }
+
+  window.addEventListener('resize', resizeCanvas);
+  window.addEventListener('load', resizeCanvas);
+
 
   // 初始化：若使用者直接輸入網址（例如 21.jpg）
   if(imgUrl.value){ /* 等使用者按載入 */ }

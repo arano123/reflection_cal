@@ -6,27 +6,134 @@
   <title>反射路徑模擬（HTML 版）</title>
   <style>
     :root {
-      --bg: #0b0f14; --panel:#10161d; --muted:#9fb0c0; --accent:#50c878;
+      --bg: #0b0f14;
+      --panel: #10161d;
+      --muted: #9fb0c0;
+      --accent: #50c878;
     }
-    body{margin:0;background:var(--bg);color:#e6eef6;font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji"}
-    .wrap{display:grid;grid-template-columns: 450px 1fr; gap:16px; padding:16px;}
-    .panel{background:var(--panel); border:1px solid #1e2936; border-radius:14px; padding:14px;}
-    .row{display:flex; align-items:center; gap:8px; margin:8px 0}
-    label{min-width:120px;color:var(--muted)}
-    input[type="number"], input[type="text"]{width:60px; background:#0c1218; color:#e6eef6; border:1px solid #223042; border-radius:10px; padding:6px 8px}
-    input[type="file"]{width:100%}
-    button{background:#173049; color:#e6eef6; border:1px solid #2a445f; padding:8px 12px; border-radius:10px; cursor:pointer}
-    button.primary{background:var(--accent); color:#052010; border-color:#1e7a4a; font-weight:600}
-    button:disabled{opacity:.5; cursor:default}
-    canvas{max-width:100%; background:#000; border-radius:12px}
-    .hint{color:#b7c7d6; font-size:12px; line-height:1.4}
-    .badge{display:inline-block; padding:2px 6px; border-radius:999px; background:#203142; color:#9cc3ff; font-size:12px; border:1px solid #2a4b6b}
-    .legend{display:flex; gap:10px; align-items:center; margin-top:6px}
-    .chip{display:inline-flex; align-items:center; gap:6px}
-    .sw{width:14px;height:4px; background:#55d2a6}
-    .sb{width:14px;height:4px; background:#5aa0ff}
-    .sr{width:14px;height:4px; background:#ff6f6f}
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: #e6eef6;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    }
+
+    .wrap {
+      display: grid;
+      grid-template-columns: 450px 1fr; /* 左側欄 340px，右側 Canvas */
+      gap: 16px;
+      padding: 16px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid #1e2936;
+      border-radius: 14px;
+      padding: 14px;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 0;
+    }
+
+    label {
+      min-width: 120px;
+      color: var(--muted);
+    }
+
+    input[type="number"], input[type="text"] {
+      width: 60px;
+      background: #0c1218;
+      color: #e6eef6;
+      border: 1px solid #223042;
+      border-radius: 10px;
+      padding: 6px 8px;
+    }
+
+    input[type="file"] {
+      width: 100%;
+    }
+
+    button {
+      background: #173049;
+      color: #e6eef6;
+      border: 1px solid #2a445f;
+      padding: 8px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: #052010;
+      border-color: #1e7a4a;
+      font-weight: 600;
+    }
+
+    button:disabled {
+      opacity: .5;
+      cursor: default;
+    }
+
+    canvas {
+      max-width: 100%;
+      background: #000;
+      border-radius: 12px;
+    }
+
+    .hint {
+      color: #b7c7d6;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: #203142;
+      color: #9cc3ff;
+      font-size: 12px;
+      border: 1px solid #2a4b6b;
+    }
+
+    .legend {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-top: 6px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .sw { width: 14px; height: 4px; background: #55d2a6; }
+    .sb { width: 14px; height: 4px; background: #5aa0ff; }
+    .sr { width: 14px; height: 4px; background: #ff6f6f; }
+
+    /* ===== 手機響應式 ===== */
+    @media (max-width: 768px) {
+      .wrap {
+        grid-template-columns: 1fr; /* 單欄，左側控制欄在上方 */
+      }
+      .panel {
+        width: 100%; /* 左側控制欄撐滿 */
+        margin-bottom: 16px;
+      }
+      canvas {
+        width: 100%; /* Canvas 自動填滿螢幕寬度 */
+        height: auto; /* 保持比例 */
+      }
+    }
   </style>
+
 </head>
 <body>
   <div class="wrap">

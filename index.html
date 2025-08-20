@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>反射路徑模擬（HTML 版）</title>
+  <style>
+    :root {
+      --bg: #0b0f14; --panel:#10161d; --muted:#9fb0c0; --accent:#50c878;
+    }
+    body{margin:0;background:var(--bg);color:#e6eef6;font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji"}
+    .wrap{display:grid;grid-template-columns: 450px 1fr; gap:16px; padding:16px;}
+    .panel{background:var(--panel); border:1px solid #1e2936; border-radius:14px; padding:14px;}
+    .row{display:flex; align-items:center; gap:8px; margin:8px 0}
+    label{min-width:120px;color:var(--muted)}
+    input[type="number"], input[type="text"]{width:60px; background:#0c1218; color:#e6eef6; border:1px solid #223042; border-radius:10px; padding:6px 8px}
+    input[type="file"]{width:100%}
+    button{background:#173049; color:#e6eef6; border:1px solid #2a445f; padding:8px 12px; border-radius:10px; cursor:pointer}
+    button.primary{background:var(--accent); color:#052010; border-color:#1e7a4a; font-weight:600}
+    button:disabled{opacity:.5; cursor:default}
+    canvas{max-width:100%; background:#000; border-radius:12px}
+    .hint{color:#b7c7d6; font-size:12px; line-height:1.4}
+    .badge{display:inline-block; padding:2px 6px; border-radius:999px; background:#203142; color:#9cc3ff; font-size:12px; border:1px solid #2a4b6b}
+    .legend{display:flex; gap:10px; align-items:center; margin-top:6px}
+    .chip{display:inline-flex; align-items:center; gap:6px}
+    .sw{width:14px;height:4px; background:#55d2a6}
+    .sb{width:14px;height:4px; background:#5aa0ff}
+    .sr{width:14px;height:4px; background:#ff6f6f}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- 左側控制面板 -->
+    <div class="panel">
+      <div class="row" style="justify-content:space-between">
+        <div class="badge">步驟</div>
+        <button id="resetBtn">重設</button>
+      </div>
+
+      <h3>1) 載入圖片</h3>
+      <div class="row"><input type="file" id="fileInput" accept="image/*"></div>
+      <div class="row"><label>最大寬×高</label>
+        <input type="number" id="maxW" value="1500" min="200"> ×
+        <input type="number" id="maxH" value="720" min="200">
+      </div>
+      <div class="row"><label>裁切(top, px)</label><input type="number" id="cropTop" value="300">
+        <label>高度(h, px)</label><input type="number" id="cropH" value="1120">
+      </div>
+      <div class="row"><button id="loadBtn" class="primary">載入 / 重新載入</button></div>
+
+      <h3>2) 畫面邊界（白框）</h3>
+      <div class="row"><label>邊界 L/T/B</label>
+        <input type="number" id="bLeft" value="44"> 
+        <input type="number" id="bTop" value="96"> 
+        <input type="number" id="bBot" value="47">
+      </div>
+      <div class="row hint">與原程式相同：左右=畫面寬度-左右邊界、上下=畫面高度-上下邊界。</div>
+
+      <h3>3) 起點與方向</h3>
+      <div class="row"><button id="pickStartBtn">在畫布上點 2 下（起點→方向）</button></div>
+
+      <h3>4) 障礙矩形</h3>
+      <div class="row"><label>數量 n</label><input type="number" id="rectN" min="0" max="10" value="0"></div>
+      <div class="row"><button id="pickRectBtn">依序點 2n 下（每 2 點成一矩形）</button></div>
+
+      <h3>5) 參數</h3>
+      <div class="row"><label>反射次數</label><input type="number" id="bounces" min="0" max="10" value="1"></div>
+      <div class="row"><label>error line N</label><input type="number" id="errN" min="0" max="99" value="1"></div>
+      <div class="row"><label>error degree θ</label><input type="number" id="theta" step="0.5" value="2"></div>
+      <div class="row"><button id="drawBtn" class="primary">繪製路徑</button></div>
+
+      <div class="legend">
+        <div class="chip"><div class="sw"></div> 原始路徑</div>
+        <div class="chip"><div class="sb"></div> 逆時針旋轉</div>
+        <div class="chip"><div class="sr"></div> 順時針旋轉</div>
+      </div>
+
+      <p class="hint" style="margin-top:10px">
+        提示：點擊時會畫出小圓點；矩形以兩點為對角繪製。按「重設」可清空狀態。
+      </p>
+    </div>
+
+    <!-- 右側畫布區 -->
+    <div class="panel">
+      <canvas id="canvas" width="900" height="600"></canvas>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  // --- 狀態 ---
+  let img = new Image();
+  let imgBitmap = null; // 已裁切後的位圖
+  let scalingFactor = 1; // 圖片縮放
+  let imgW = 0, imgH = 0; // 畫布內實際繪製的圖片尺寸
+  let bx1=0, bx2=0, by1=0, by2=0; // 邊界（畫布座標）
+
+  let mode = 'idle'; // idle | pickStart | pickRect
+  let points = []; // 點擊紀錄（通用）
+  let startPt = null; // [x,y]
+  let dirPt = null; // [x,y]
+  let rectangles = []; // {cx,cy,width,height,x1,x2,y1,y2}
+
+  // UI 元件
+  const $ = id => document.getElementById(id);
+  const fileInput = $('fileInput');
+  const imgUrl = $('imgUrl');
+  const maxW = $('maxW');
+  const maxH = $('maxH');
+  const cropTop = $('cropTop');
+  const cropH = $('cropH');
+  const bLeft = $('bLeft');
+  const bTop = $('bTop');
+  const bBot = $('bBot');
+  const loadBtn = $('loadBtn');
+  const pickStartBtn = $('pickStartBtn');
+  const pickRectBtn = $('pickRectBtn');
+  const rectN = $('rectN');
+  const bouncesInput = $('bounces');
+  const errN = $('errN');
+  const theta = $('theta');
+  const drawBtn = $('drawBtn');
+  const resetBtn = $('resetBtn');
+
+  // 小工具
+  function drawCircle(x,y,r, color){
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle=color; ctx.fill();
+  }
+  function drawRectOutline(x1,y1,x2,y2, color, w=3){
+    ctx.beginPath(); ctx.lineWidth = w; ctx.strokeStyle=color; ctx.strokeRect(Math.min(x1,x2),Math.min(y1,y2), Math.abs(x2-x1), Math.abs(y2-y1));
+  }
+  function drawDashedLine(x1,y1,x2,y2, color, w=4){
+    ctx.beginPath(); ctx.setLineDash([6,6]); ctx.lineWidth=w; ctx.strokeStyle=color; ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  function resetState(clearImage=false){
+    mode='idle'; points=[]; startPt=null; dirPt=null; rectangles=[];
+    if(clearImage){ imgBitmap=null; }
+    redraw();
+  }
+
+  resetBtn.addEventListener('click', () => resetState(false));
+
+  // 載入圖片並裁切 + 縮放
+  async function loadImage(){
+    return new Promise((resolve, reject) => {
+      if (fileInput.files && fileInput.files[0]){
+        const url = URL.createObjectURL(fileInput.files[0]);
+        img.onload = () => resolve(url);
+        img.onerror = reject;
+        img.src = url;
+      } else if (imgUrl.value.trim() !== ''){
+        img.onload = () => resolve(imgUrl.value.trim());
+        img.onerror = reject;
+        img.src = imgUrl.value.trim();
+      } else {
+        reject(new Error('請上傳圖片或輸入網址'));
+      }
+    });
+  }
+
+  async function prepareBitmap(){
+    // 依據輸入裁切（模擬原程式 crop(0,300,945,1420) 的 top 與高度）
+    const top = Number(cropTop.value)||0; const h = Number(cropH.value)||img.height;
+    const sx = 0, sy = Math.max(0, top), sw = img.width, sh = Math.min(h, img.height - sy);
+
+    // 轉成離屏 canvas 以得到被裁切的位圖
+    const off = document.createElement('canvas');
+    off.width = sw; off.height = sh;
+    const octx = off.getContext('2d');
+    octx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+
+    // 設定顯示大小（等比例縮放，不超過 maxW/maxH）
+    const mW = Number(maxW.value)||1500; const mH = Number(maxH.value)||720;
+    const s = Math.min(mW/sw, mH/sh);
+    imgW = Math.round(sw*s); imgH = Math.round(sh*s);
+    scalingFactor = s;
+
+    // 主畫布大小 = 圖片大小
+    canvas.width = imgW; canvas.height = imgH;
+
+    // 產生 ImageBitmap 以加速繪製
+    imgBitmap = await createImageBitmap(off);
+
+    // 設定邊界（依比例縮放）
+    const L = Number(bLeft.value)||0; const T = Number(bTop.value)||0; const B = Number(bBot.value)||0;
+    bx1 = L * s; bx2 = imgW - L * s; by1 = T * s; by2 = imgH - B * s;
+  }
+
+  function redraw(){
+    ctx.clearRect(0,0,canvas.width, canvas.height);
+    if(imgBitmap){ ctx.drawImage(imgBitmap, 0,0, imgW, imgH); }
+    // 畫白色邊界
+    if(imgBitmap){
+      ctx.save(); ctx.strokeStyle = '#ffffff'; ctx.globalAlpha = .85; ctx.lineWidth = 4; ctx.setLineDash([8,6]);
+      ctx.strokeRect(bx1, by1, bx2-bx1, by2-by1); ctx.restore();
+    }
+    // 畫既有矩形
+    rectangles.forEach(r => drawRectOutline(r.x1, r.y1, r.x2, r.y2, '#ffffff'));
+    // 畫起點/方向點
+    if(startPt){ drawCircle(startPt[0], startPt[1], 7, '#2aa1ff'); }
+    if(dirPt){ drawCircle(dirPt[0], dirPt[1], 7, '#2aa1ff'); }
+  }
+
+  loadBtn.addEventListener('click', async ()=>{
+    try{
+      await loadImage();
+      await prepareBitmap();
+      resetState(false);
+    }catch(e){ alert(e.message||e); }
+  });
+
+  // 點擊互動
+  canvas.addEventListener('click', (ev)=>{
+    const rect = canvas.getBoundingClientRect();
+    const x = ev.clientX - rect.left; const y = ev.clientY - rect.top;
+
+    if(mode === 'pickStart'){
+      points.push([x,y]); drawCircle(x,y,5,'#5bbcff');
+      if(points.length === 1){ startPt = points[0]; }
+      if(points.length === 2){ dirPt = points[1]; mode='idle'; points=[]; }
+      redraw();
+    } else if(mode === 'pickRect'){
+      points.push([x,y]); drawCircle(x,y,3,'#ffffff');
+      if(points.length % 2 === 0){
+        const p1 = points[points.length-2];
+        const p2 = points[points.length-1];
+        addRectangleFromTwoPoints(p1,p2);
+        redraw();
+        const need = Number(rectN.value)*2;
+        if(points.length >= need){ mode='idle'; points=[]; }
+      }
+    }
+  });
+
+  pickStartBtn.addEventListener('click', ()=>{ points=[]; mode='pickStart'; });
+  pickRectBtn.addEventListener('click', ()=>{ points=[]; mode='pickRect'; rectangles=[]; redraw(); });
+
+  function addRectangleFromTwoPoints(p1,p2){
+    const x1 = p1[0], y1=p1[1], x2=p2[0], y2=p2[1];
+    const cx = (x1+x2)/2, cy=(y1+y2)/2;
+    const w = Math.abs(x2-x1), h = Math.abs(y2-y1);
+    rectangles.push({cx, cy, width:w, height:h, x1:Math.min(x1,x2), x2:Math.max(x1,x2), y1:Math.min(y1,y2), y2:Math.max(y1,y2)});
+  }
+
+  // 幾何工具
+  function reflectVector(dx, dy, normal){
+    if(!normal) return [dx,dy];
+    if(normal[0]!==0){ dx = -dx; }
+    if(normal[1]!==0){ dy = -dy; }
+    return [dx,dy];
+  }
+
+  function reflectAtWalls(x,y,dx,dy){
+    const eps = 0.1;
+    if(x <= bx1+eps){ x = 2*bx1 - x; dx = -dx; }
+    else if(x >= bx2-eps){ x = 2*bx2 - x; dx = -dx; }
+    if(y <= by1+eps){ y = 2*by1 - y; dy = -dy; }
+    else if(y >= by2-eps){ y = 2*by2 - y; dy = -dy; }
+    return [x,y,dx,dy];
+  }
+
+  function isCollisionRect(rect, x,y,dx,dy){
+    // 回傳最小 t 與法向量 normal
+    let tMin = Infinity; let normal = null;
+    // 左邊
+    if(dx>0 && x < rect.x1){
+      const t = (rect.x1 - x)/dx; const yy = y + t*dy;
+      if(yy > rect.y1 && yy < rect.y2 && t < tMin){ tMin=t; normal=[-1,0]; }
+    }
+    // 右邊
+    if(dx<0 && x > rect.x2){
+      const t = (rect.x2 - x)/dx; const yy = y + t*dy;
+      if(yy > rect.y1 && yy < rect.y2 && t < tMin){ tMin=t; normal=[1,0]; }
+    }
+    // 上邊
+    if(dy>0 && y < rect.y1){
+      const t = (rect.y1 - y)/dy; const xx = x + t*dx;
+      if(xx > rect.x1 && xx < rect.x2 && t < tMin){ tMin=t; normal=[0,-1]; }
+    }
+    // 下邊
+    if(dy<0 && y > rect.y2){
+      const t = (rect.y2 - y)/dy; const xx = x + t*dx;
+      if(xx > rect.x1 && xx < rect.x2 && t < tMin){ tMin=t; normal=[0,1]; }
+    }
+    return [tMin, normal];
+  }
+
+  function drawBouncingPath(x0,y0,dx,dy,bounces){
+    const pathX=[x0], pathY=[y0];
+    let x=x0, y=y0;
+
+    for(let i=0;i<bounces;i++){
+      // 牆壁時間
+      const tWall = Math.min(
+        dx>0 ? (bx2 - x)/dx : (bx1 - x)/dx,
+        dy>0 ? (by2 - y)/dy : (by1 - y)/dy
+      );
+
+      // 矩形碰撞
+      let tRectMin = Infinity; let normal=null;
+      for(const r of rectangles){
+        const [tRect, n] = isCollisionRect(r, x,y,dx,dy);
+        if(tRect < tRectMin){ tRectMin=tRect; normal=n; }
+      }
+
+      if(tRectMin < tWall){
+        const t = tRectMin; x += dx*t; y += dy*t; // 到矩形
+        ;[dx,dy] = reflectVector(dx,dy,normal);
+      } else {
+        const t = tWall; x += dx*t; y += dy*t; // 到牆
+        ;[x,y,dx,dy] = reflectAtWalls(x,y,dx,dy);
+      }
+      pathX.push(x); pathY.push(y);
+    }
+    return [pathX, pathY];
+  }
+
+  function rotateVector(dx,dy,thetaDeg){
+    const th = thetaDeg * Math.PI/180; const c=Math.cos(th), s=Math.sin(th);
+    return [c*dx - s*dy, s*dx + c*dy];
+  }
+
+  function drawMultiplePaths(){
+    if(!startPt || !dirPt){ alert('請先選擇起點與方向（步驟 3）'); return; }
+    const B = Number(bouncesInput.value)+1||0; // 與原程式一致：那邊是 +1 後傳入，這裡直接讓你輸入「段數」
+    const N = Number(errN.value)||0; const TH = Number(theta.value)||0;
+
+    redraw();
+
+    const dx0 = (dirPt[0]-startPt[0]);
+    const dy0 = (dirPt[1]-startPt[1]);
+
+    // 原始路徑（綠）
+    let [px,py] = drawBouncingPath(startPt[0], startPt[1], dx0, dy0, B);
+    for(let i=0;i<px.length-1;i++) drawDashedLine(px[i],py[i],px[i+1],py[i+1],'#55d2a6',4);
+
+    for(let i=1;i<=N;i++){
+      // 順時針（藍）
+      let [dx1,dy1] = rotateVector(dx0, dy0, -i*TH);
+      let [px1,py1] = drawBouncingPath(startPt[0], startPt[1], dx1, dy1, B);
+      for(let k=0;k<px1.length-1;k++) drawDashedLine(px1[k],py1[k],px1[k+1],py1[k+1],'#5aa0ff',4);
+      // 逆時針（紅）
+      let [dx2,dy2] = rotateVector(dx0, dy0,  i*TH);
+      let [px2,py2] = drawBouncingPath(startPt[0], startPt[1], dx2, dy2, B);
+      for(let k=0;k<px2.length-1;k++) drawDashedLine(px2[k],py2[k],px2[k+1],py2[k+1],'#ff6f6f',4);
+    }
+  }
+
+  drawBtn.addEventListener('click', drawMultiplePaths);
+
+  // 初始化：若使用者直接輸入網址（例如 21.jpg）
+  if(imgUrl.value){ /* 等使用者按載入 */ }
+})();
+</script>
+</body>
+</html>
